@@ -2,10 +2,10 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from flask import Flask
-from threading import Thread
 from dotenv import load_dotenv
 import os
+from flask import Flask
+from threading import Thread
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -27,6 +27,7 @@ class MyBot(commands.Bot):
         if not self.synced:
             await bot.tree.sync()
             self.synced = True
+            print("Commandes Slash synchronisées avec Discord.")
 
 bot = MyBot()
 
@@ -56,27 +57,29 @@ def has_authorized_role(interaction: discord.Interaction):
     """Vérifie si l'utilisateur possède un rôle autorisé."""
     return any(role.id in AUTHORIZED_ROLE_IDS for role in interaction.user.roles)
 
-# === Commande Slash ===
+# === Commande Slash : /annonce ===
 @bot.tree.command(name="annonce", description="Créer une annonce stylée.")
 async def annonce(interaction: discord.Interaction):
     """Commande slash pour créer une annonce stylée."""
-    # Vérifier si l'utilisateur a un rôle autorisé
+    # Vérifier les permissions de l'utilisateur
     if not has_authorized_role(interaction):
         await interaction.response.send_message(
             "❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True
         )
         return
 
-    # Demander l'annonce via une interaction différée
-    await interaction.response.send_message("✏️ Veuillez entrer le texte de votre annonce ci-dessous :", ephemeral=True)
+    # Demander à l'utilisateur d'entrer son annonce
+    await interaction.response.send_message(
+        "✏️ Veuillez entrer votre annonce dans ce chat (répondez ici). Vous avez 5 minutes.", ephemeral=True
+    )
 
-    # Attendre la réponse de l'utilisateur
     def check(message):
         return message.author == interaction.user and message.channel == interaction.channel
 
     try:
+        # Attendre le message de l'utilisateur
         message = await bot.wait_for("message", check=check, timeout=300.0)
-        
+
         # Créer un embed stylé pour l'annonce
         embed = discord.Embed(
             description=message.content,
@@ -85,10 +88,10 @@ async def annonce(interaction: discord.Interaction):
         embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
         embed.set_footer(text=f"Annonce par {interaction.user.name}")
 
-        # Envoyer l'embed dans le salon
+        # Envoyer l'embed dans le même salon
         await interaction.channel.send(embed=embed)
         
-        # Supprimer le message d'origine pour garder le chat propre
+        # Supprimer le message original de l'utilisateur pour garder le chat propre
         await message.delete()
 
     except Exception as e:
