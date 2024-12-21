@@ -15,8 +15,8 @@ intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 
-# Initialisation du bot
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Initialisation du bot avec le préfixe '&'
+bot = commands.Bot(command_prefix="&", intents=intents)
 
 # === Serveur Web Flask ===
 app = Flask('')
@@ -49,19 +49,26 @@ def has_authorized_role(ctx):
 @commands.check(has_authorized_role)
 async def annonce(ctx):
     """Commande pour envoyer une annonce stylée."""
-    await ctx.send("📝 Veuillez écrire votre annonce dans le chat. Tapez `cancel` pour annuler.")
+    # Supprime immédiatement la commande pour éviter qu'elle apparaisse dans le chat
+    await ctx.message.delete()
+    
+    # Envoyer un message demandant à l'utilisateur de copier/coller son annonce
+    prompt = await ctx.send(f"✏️ {ctx.author.mention}, veuillez copier/coller ou écrire votre annonce ici. Tapez `cancel` pour annuler.")
 
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel
 
     try:
-        # Attendre que l'utilisateur entre le contenu de l'annonce
+        # Attendre que l'utilisateur entre son annonce
         message = await bot.wait_for("message", check=check, timeout=300.0)
+        
+        # Vérifier si l'utilisateur a annulé l'annonce
         if message.content.lower() == "cancel":
-            await ctx.send("❌ L'annonce a été annulée.")
+            await ctx.send("❌ L'annonce a été annulée.", delete_after=10)
+            await message.delete()
             return
         
-        # Créer un embed stylé
+        # Créer un embed stylé pour l'annonce
         embed = discord.Embed(
             description=message.content,
             color=discord.Color.blue()
@@ -71,16 +78,21 @@ async def annonce(ctx):
 
         # Envoyer l'embed dans le canal
         await ctx.send(embed=embed)
-        await message.delete()  # Supprime le message de l'utilisateur (optionnel)
+
+        # Supprimer l'annonce d'origine pour garder le chat propre
+        await message.delete()
     except Exception as e:
-        await ctx.send("⏰ Temps écoulé ou erreur, veuillez réessayer.")
+        await ctx.send("⏰ Temps écoulé ou erreur, veuillez réessayer.", delete_after=10)
         print(e)
+    finally:
+        # Supprimer le message de prompt initial
+        await prompt.delete()
 
 @bot.event
 async def on_command_error(ctx, error):
     """Gestion des erreurs de commande."""
     if isinstance(error, commands.CheckFailure):
-        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.")
+        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", delete_after=10)
     else:
         print(error)
 
