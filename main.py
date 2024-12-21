@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import os
 from flask import Flask
 from threading import Thread
-import asyncio
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -24,7 +23,7 @@ class MyBot(commands.Bot):
         self.synced = False  # Vérifier si les commandes slash sont synchronisées
 
     async def setup_hook(self):
-        # Synchroniser les commandes slash quand le bot est prêt
+        """ Synchroniser les commandes slash avec Discord """
         if not self.synced:
             await self.tree.sync()
             self.synced = True
@@ -59,9 +58,10 @@ def has_authorized_role(interaction: discord.Interaction):
     return any(role.id in AUTHORIZED_ROLE_IDS for role in interaction.user.roles)
 
 # === Commande Slash : /annonce ===
-@bot.tree.command(name="annonce", description="Créer une annonce stylée.")
-async def annonce(interaction: discord.Interaction):
-    """Commande slash pour créer une annonce stylée."""
+@bot.tree.command(name="annonce", description="Créer une annonce dans un salon spécifié.")
+@app_commands.describe(channel="Le salon où envoyer l'annonce", message="Le message de l'annonce")
+async def annonce(interaction: discord.Interaction, channel: discord.TextChannel, message: str):
+    """Commande slash pour créer une annonce dans un salon spécifique."""
     # Vérifier les permissions de l'utilisateur
     if not has_authorized_role(interaction):
         await interaction.response.send_message(
@@ -69,40 +69,26 @@ async def annonce(interaction: discord.Interaction):
         )
         return
 
-    # Demander à l'utilisateur d'entrer son annonce
-    await interaction.response.send_message(
-        "✏️ Veuillez entrer votre annonce dans ce chat (répondez ici). Vous avez 5 minutes.", ephemeral=True
+    # Créer un embed stylé pour l'annonce
+    embed = discord.Embed(
+        description=message,
+        color=discord.Color.blue()
     )
-
-    def check(message):
-        return message.author == interaction.user and message.channel == interaction.channel
+    embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
+    embed.set_footer(text=f"Annonce par {interaction.user.name}")
 
     try:
-        # Attendre le message de l'utilisateur
-        message = await bot.wait_for("message", check=check, timeout=300.0)
+        # Envoyer l'embed dans le salon spécifié
+        await channel.send(embed=embed)
 
-        # Créer un embed stylé pour l'annonce
-        embed = discord.Embed(
-            description=message.content,
-            color=discord.Color.blue()
-        )
-        embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
-        embed.set_footer(text=f"Annonce par {interaction.user.name}")
-
-        # Envoyer l'embed dans le même salon
-        await interaction.channel.send(embed=embed)
-        
-        # Supprimer le message original de l'utilisateur pour garder le chat propre
-        await message.delete()
-
-    except asyncio.TimeoutError:
-        await interaction.followup.send(
-            "⏰ Le temps imparti est écoulé, vous n'avez pas fourni d'annonce à temps.", ephemeral=True
+        # Répondre à l'utilisateur pour confirmer l'envoi
+        await interaction.response.send_message(
+            f"✅ L'annonce a été envoyée dans {channel.mention}.", ephemeral=True
         )
 
     except Exception as e:
-        await interaction.followup.send(
-            "⏰ Temps écoulé ou erreur, veuillez réessayer.", ephemeral=True
+        await interaction.response.send_message(
+            "⏰ Une erreur est survenue lors de l'envoi de l'annonce. Veuillez réessayer.", ephemeral=True
         )
         print(e)
 
