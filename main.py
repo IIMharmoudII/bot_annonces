@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import discord
 from discord.ext import commands
+from discord import app_commands
 from flask import Flask
 from threading import Thread
 from dotenv import load_dotenv
@@ -15,8 +16,19 @@ intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 
-# Initialisation du bot avec le préfixe '&'
-bot = commands.Bot(command_prefix="&", intents=intents)
+# Initialisation du bot
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="&", intents=intents)
+        self.synced = False  # Vérifier si les commandes slash sont synchronisées
+
+    async def setup_hook(self):
+        # Synchroniser les commandes slash
+        if not self.synced:
+            await bot.tree.sync()
+            self.synced = True
+
+bot = MyBot()
 
 # === Serveur Web Flask ===
 app = Flask('')
@@ -25,7 +37,6 @@ app = Flask('')
 def home():
     return "Le bot est en ligne et répond aux pings !"
 
-# Fonction pour lancer le serveur Flask dans un thread séparé
 def run_webserver():
     app.run(host='0.0.0.0', port=8080)
 
@@ -41,60 +52,50 @@ AUTHORIZED_ROLE_IDS = [
 ]
 
 # Vérifier si l'utilisateur a un rôle autorisé
-def has_authorized_role(ctx):
+def has_authorized_role(interaction: discord.Interaction):
     """Vérifie si l'utilisateur possède un rôle autorisé."""
-    return any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles)
+    return any(role.id in AUTHORIZED_ROLE_IDS for role in interaction.user.roles)
 
-@bot.command()
-@commands.check(has_authorized_role)
-async def annonce(ctx):
-    """Commande pour envoyer une annonce stylée."""
-    # Supprime immédiatement la commande pour éviter qu'elle apparaisse dans le chat
-    await ctx.message.delete()
-    
-    # Envoyer un message demandant à l'utilisateur de copier/coller son annonce
-    prompt = await ctx.send(f"✏️ {ctx.author.mention}, veuillez copier/coller ou écrire votre annonce ici. Tapez `cancel` pour annuler.")
+# === Commande Slash ===
+@bot.tree.command(name="annonce", description="Créer une annonce stylée.")
+async def annonce(interaction: discord.Interaction):
+    """Commande slash pour créer une annonce stylée."""
+    # Vérifier si l'utilisateur a un rôle autorisé
+    if not has_authorized_role(interaction):
+        await interaction.response.send_message(
+            "❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True
+        )
+        return
 
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
+    # Demander l'annonce via une interaction différée
+    await interaction.response.send_message("✏️ Veuillez entrer le texte de votre annonce ci-dessous :", ephemeral=True)
+
+    # Attendre la réponse de l'utilisateur
+    def check(message):
+        return message.author == interaction.user and message.channel == interaction.channel
 
     try:
-        # Attendre que l'utilisateur entre son annonce
         message = await bot.wait_for("message", check=check, timeout=300.0)
-        
-        # Vérifier si l'utilisateur a annulé l'annonce
-        if message.content.lower() == "cancel":
-            await ctx.send("❌ L'annonce a été annulée.", delete_after=10)
-            await message.delete()
-            return
         
         # Créer un embed stylé pour l'annonce
         embed = discord.Embed(
             description=message.content,
             color=discord.Color.blue()
         )
-        embed.set_author(name=ctx.author.name, icon_url=ctx.author.avatar.url)
-        embed.set_footer(text=f"Annonce par {ctx.author.name}")
+        embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
+        embed.set_footer(text=f"Annonce par {interaction.user.name}")
 
-        # Envoyer l'embed dans le canal
-        await ctx.send(embed=embed)
-
-        # Supprimer l'annonce d'origine pour garder le chat propre
+        # Envoyer l'embed dans le salon
+        await interaction.channel.send(embed=embed)
+        
+        # Supprimer le message d'origine pour garder le chat propre
         await message.delete()
-    except Exception as e:
-        await ctx.send("⏰ Temps écoulé ou erreur, veuillez réessayer.", delete_after=10)
-        print(e)
-    finally:
-        # Supprimer le message de prompt initial
-        await prompt.delete()
 
-@bot.event
-async def on_command_error(ctx, error):
-    """Gestion des erreurs de commande."""
-    if isinstance(error, commands.CheckFailure):
-        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", delete_after=10)
-    else:
-        print(error)
+    except Exception as e:
+        await interaction.followup.send(
+            "⏰ Temps écoulé ou erreur, veuillez réessayer.", ephemeral=True
+        )
+        print(e)
 
 # === Lancer le serveur Flask et le bot ===
 keep_alive()
