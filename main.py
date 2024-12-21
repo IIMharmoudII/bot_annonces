@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import os
 from flask import Flask
 from threading import Thread
+import asyncio
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -23,9 +24,9 @@ class MyBot(commands.Bot):
         self.synced = False  # Vérifier si les commandes slash sont synchronisées
 
     async def setup_hook(self):
-        # Synchroniser les commandes slash
+        # Synchroniser les commandes slash quand le bot est prêt
         if not self.synced:
-            await bot.tree.sync()
+            await self.tree.sync()
             self.synced = True
             print("Commandes Slash synchronisées avec Discord.")
 
@@ -94,11 +95,28 @@ async def annonce(interaction: discord.Interaction):
         # Supprimer le message original de l'utilisateur pour garder le chat propre
         await message.delete()
 
+    except asyncio.TimeoutError:
+        await interaction.followup.send(
+            "⏰ Le temps imparti est écoulé, vous n'avez pas fourni d'annonce à temps.", ephemeral=True
+        )
+
     except Exception as e:
         await interaction.followup.send(
             "⏰ Temps écoulé ou erreur, veuillez réessayer.", ephemeral=True
         )
         print(e)
+
+# === Lancer le serveur Flask et le bot ===
+@bot.event
+async def on_ready():
+    """Événement lancé lorsque le bot est prêt."""
+    print(f"Bot connecté en tant que {bot.user}")
+    try:
+        # Synchroniser les commandes slash quand le bot est prêt
+        await bot.tree.sync()
+        print("Commandes Slash synchronisées.")
+    except Exception as e:
+        print(f"Erreur lors de la synchronisation des commandes slash : {e}")
 
 # === Lancer le serveur Flask et le bot ===
 keep_alive()
